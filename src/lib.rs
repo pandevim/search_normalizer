@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{self, BufRead};
+use std::io;
 use std::path::Path;
 use regex::Regex;
 
@@ -13,6 +12,16 @@ pub struct Normalizer {
 
 impl Normalizer {
     pub fn new() -> Self {
+        let mut normalizer = Self::empty();
+        
+        normalizer.populate_stopwords(include_str!("defaults/stopwords-en.txt"));
+        normalizer.populate_whitelist(include_str!("defaults/whitelist.txt"));
+        normalizer.populate_lemmatizer(include_str!("defaults/lemmatization-en.txt"));
+        
+        normalizer
+    }
+
+    pub fn empty() -> Self {
         Normalizer {
             lemmatizer: HashMap::new(),
             stopwords: HashSet::new(),
@@ -21,50 +30,57 @@ impl Normalizer {
         }
     }
 
-    pub fn load_whitelist<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
-        let file = File::open(path)?;
-        let reader = io::BufReader::new(file);
-        for line in reader.lines() {
-            let word = line?.trim().to_string();
+    pub fn populate_whitelist(&mut self, content: &str) {
+        for line in content.lines() {
+            let word = line.trim().to_string();
             if !word.is_empty() {
                 self.whitelist.insert(word.to_lowercase());
             }
         }
-        Ok(())
     }
 
-    pub fn load_stopwords<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
-        let file = File::open(path)?;
-        let reader = io::BufReader::new(file);
-        for line in reader.lines() {
-            let word = line?.trim().to_string();
+    pub fn populate_stopwords(&mut self, content: &str) {
+        for line in content.lines() {
+            let word = line.trim().to_string();
             if !word.is_empty() {
                 self.stopwords.insert(word);
             }
         }
-        Ok(())
     }
 
-pub fn load_lemmatization_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
-    let file = File::open(path)?;
-    let reader = io::BufReader::new(file);
-
-    for line in reader.lines() {
-        let line = line?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            // Column 0 is the Target (Lemma)
-            // Column 1+ are the Source forms (Inflected forms)
-            let lemma = parts[0].to_string();
-            
-            // Map each inflected form to its lemma
-            for &inflected_form in &parts[1..] {
-                self.lemmatizer.insert(inflected_form.to_string(), lemma.clone());
+    pub fn populate_lemmatizer(&mut self, content: &str) {
+        for line in content.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                // Column 0 is the Target (Lemma)
+                // Column 1+ are the Source forms (Inflected forms)
+                let lemma = parts[0].to_string();
+                
+                // Map each inflected form to its lemma
+                for &inflected_form in &parts[1..] {
+                    self.lemmatizer.insert(inflected_form.to_string(), lemma.clone());
+                }
             }
         }
     }
-    Ok(())
-}
+
+    pub fn load_whitelist<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        let content = std::fs::read_to_string(path)?;
+        self.populate_whitelist(&content);
+        Ok(())
+    }
+
+    pub fn load_stopwords<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        let content = std::fs::read_to_string(path)?;
+        self.populate_stopwords(&content);
+        Ok(())
+    }
+
+    pub fn load_lemmatization_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        let content = std::fs::read_to_string(path)?;
+        self.populate_lemmatizer(&content);
+        Ok(())
+    }
 
     pub fn process(&self, text: &str) -> Vec<String> {
         let lowercased = text.to_lowercase();
@@ -130,7 +146,7 @@ mod tests {
 
     #[test]
     fn test_processing() {
-        let mut normalizer = Normalizer::new();
+        let mut normalizer = Normalizer::empty();
         // Mock lemmatization data
         normalizer.lemmatizer.insert("running".to_string(), "run".to_string());
         normalizer.lemmatizer.insert("cats".to_string(), "cat".to_string());
